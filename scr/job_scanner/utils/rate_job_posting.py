@@ -1,14 +1,112 @@
 import datetime
 import trafilatura
 import re
+import os
+import numpy as np
 from job_scanner.utils.logger_setup import start_logger
 from job_scanner.utils.web_scrapper_linkedin import access_webpage
 from job_scanner.data.job_lookup_data import job_lookup_data
+from job_scanner.llm.openai_client import create_llm_client
+from job_scanner.llm.job_ranker import JobRanker
+from job_scanner.llm.happy_client import set_up_token, set_up_hugging_env_var
 from bs4 import BeautifulSoup
-from typing import Optional
+from typing import Optional, List
+from sentence_transformers import SentenceTransformer
+
+from pypdf import PdfReader
 
 LOG = start_logger()
 
+
+
+# Load a small, fast model
+EMBEDDING_MODEL = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+
+def embed_text(text: str) -> np.ndarray:
+    """Return a vector embedding for a piece of text."""
+    return EMBEDDING_MODEL.encode(text, convert_to_numpy=True, normalize_embeddings=True)
+
+def cosine_similarity(vec1: np.ndarray, vec2: np.ndarray) -> float:
+    """Return cosine similarity between two vectors."""
+    return float(np.dot(vec1, vec2))
+
+def score_job_vs_cv(cv_chunks: list[str], job_text: str) -> float:
+    """
+    Returns a similarity score [0.0, 1.0] between the CV and job description.
+    """
+    job_vec = embed_text(job_text)
+
+    max_score = 0.0
+    for chunk in cv_chunks:
+        chunk_vec = embed_text(chunk)
+        sim = cosine_similarity(chunk_vec, job_vec)
+        if sim > max_score:
+            max_score = sim
+
+    return max_score
+
+def extract_text_from_pdf(pdf_path: str) -> Optional[str]:
+    """
+    Extract text from a PDF file at `path`. Returns an empty string on failure.
+
+    Args:
+        pdf_path (str): path to the PDF file to load
+
+    Returns:
+        str | None: this is a string of the PDF file
+    """
+    if not os.path.isfile(pdf_path):
+        LOG.error(f"PDF file not found: {pdf_path}")
+        return None
+    reader = PdfReader(pdf_path)
+    pages = []
+    for page in reader.pages:
+        page_text = page.extract_text() or ""
+        if page_text:
+            pages.append(page_text)
+    text = "\n\n".join(pages)
+    # normalize whitespace
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def break_text_into_chunks(text: str, max_chunk_chars: int = 2000, overlap: int = 200) -> List[str]:
+    """
+    Split `text` into overlapping chunks of up to `max_chunk_chars` characters,
+    with `overlap` characters shared between consecutive chunks.
+
+    Args:
+        text (str): this is the text you need to chunk up
+        max_chunk_chars (int): this is the maximum size of the chunk
+        overlap (int): how many characters to overlap the chunks by
+
+    Returns:
+        list[str]: this is the list of chunks of text
+    """
+    chunks = []
+    if not text:
+        return chunks
+    if max_chunk_chars <= 0:
+        LOG.debug("max_chunk_chars must be > 0")
+        return chunks
+    # check invalid overlaps if their below 0 or less
+    # than max_chunk_chars it will default to 10% of
+    # max_chunk_chars rounded down never negative
+    if overlap < 0 or overlap >= max_chunk_chars:
+        overlap = max(0, int(max_chunk_chars * 0.1))
+    start = 0
+    length = len(text)
+    while start < length:
+        end = min(start + max_chunk_chars, length)
+        chunk = text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        if end == length:
+            break
+        start = max(end - overlap, end) - (0 if overlap == 0 else 0)  # ensure forward progress
+        # simpler: move start to end - overlap
+        start = end - overlap
+    return chunks
 
 def scrape_job_page(url:str) -> Optional[dict]:
     """
@@ -65,8 +163,7 @@ def scrape_job_page(url:str) -> Optional[dict]:
 def update_google_sheet_with_job_rating():
     pass
 
-def scrape_pdf_file():
-    pass
+
 
 def normalize_text(text:str) -> str:
     text = text.lower()
@@ -88,7 +185,6 @@ def matches_job_interest(job_title: str, text: str, keywords_include: frozenset,
     """
     text = normalize_text(text)
     job_title = normalize_text(job_title)
-    pprint(job_title)
     if not any(kw in text for kw in keywords_include) and not any(kw in job_title for kw in keywords_include):
         LOG.debug("We did not find any for the keywords_include in the text")
         return False
@@ -96,16 +192,28 @@ def matches_job_interest(job_title: str, text: str, keywords_include: frozenset,
         return False
     return True
 
-def rate_job_posts(job_links: list, cv_file_path: str):
+
+
+def rate_job_posts(job_links: list, pdf_file_path: str, json_token_path: str, llm_model: str = "mistralai"):
     """
     This will rate all the job links that are passed comparing them to a cv to see
     if there close to what you do and looking for keywords
 
     Args:
         job_links (list): this is the jobs
-        cv_file_path (str): a path to the pdf file that is your CV
+        pdf_file_path (str): a path to the pdf file that is your CV
+        llm_model (str): this is the LLM you are using
+        json_token_path (str): This is the path to the LLM token you need to inishiate it
     """
     upload_to_google_sheets = []
+    llm_client = create_llm_client()
+    # extract the text from a PDF CV file and chunk it for LLM comparison
+    cv_text = extract_text_from_pdf(pdf_file_path)
+    cv_chunks = break_text_into_chunks(cv_text, max_chunk_chars=1800, overlap=200)
+    LOG.debug(f"Extracted {len(cv_chunks)} cv chunks for comparison")
+    set_up_hugging_env_var(json_token_path)
+    model_name, tokenizer, model = set_up_token(llm_model)
+
     # scrape each link from the job_links list and get all the data off each page
     for job in job_links:
         LOG.debug(f"Checking {job['jog_title']}")
@@ -118,9 +226,11 @@ def rate_job_posts(job_links: list, cv_file_path: str):
             "location": job["location"],
             "link": job["link"],
             "date_processed": datetime.datetime.now().strftime("%m/%d/%Y"),
-            "cv_used": str(cv_file_path),
+            "cv_used": pdf_file_path,
             "scraped_failed": 'No',
-            "no_matching_job_title": ''
+            "no_matching_job_title": '',
+            "content": '',
+            "cv_chunk_count": len(cv_chunks)
         }
         website_info = scrape_job_page(job["link"])
         if not website_info:
@@ -138,16 +248,65 @@ def rate_job_posts(job_links: list, cv_file_path: str):
         )
 
         if not job_matches_text:
-            LOG.debug("The job description either did not have the job title I am looking for or had one of ignore words in it")
-            google_sheet_data['no_matching_job_title']='Yes'
+            LOG.debug(
+                "The job description either did not have the job title I am looking for or had one of ignore words in it"
+            )
+            google_sheet_data["no_matching_job_title"] = "Yes"
             upload_to_google_sheets.append(google_sheet_data)
             continue
-        website_info['jog_id']=job['job_id']
-        pprint(website_info)
 
-        #TODO break down the pdf file that is my cv into a str that the LLM can understand
+        google_sheet_data["content"] = website_info["content"]
+        google_sheet_data["no_matching_job_title"] = "No"
+        # find chucks with numpy vectors to get similier words checked
+        similarity_score = score_job_vs_cv(cv_chunks, website_info["content"])
+        if similarity_score > 0.7:
+            LOG.info(f"Job {job['job_id']} is a strong match!")
+        elif similarity_score > 0.5:
+            LOG.info(f"Job {job['job_id']} is a moderate match")
+        else:
+            LOG.info(f"Job {job['job_id']} is a weak match")
+        google_sheet_data["rating_vs_cv"] = round(similarity_score * 100, 2)
 
-        #TODO use the cv_data and the link_data and compare them with a LLM
+        if similarity_score > 0.5:
+            start = datetime.datetime.now()
+            # Initialize the JobRanker once, probably at the top of rate_job_posts
+            ranker = JobRanker(model, tokenizer)
+
+            all_scores = []
+            all_missing_skills = []
+            all_justifications = []
+            for cv_chunk in cv_chunks:
+                # Pass the CV and job description to the LLM
+                llm_result = ranker.rate_job_chunk(
+                    cv_text=cv_chunk,
+                    job_text=website_info["content"],
+                    max_new_tokens=150,  # optional: adjust length
+                    temperature=0.1,  # optional: low temp for more deterministic scoring
+                )
+                all_scores.append(llm_result["score"])
+                all_missing_skills.extend(llm_result.get("missing_skills", []))
+                justification = llm_result.get("justification")
+                if justification:
+                    all_justifications.append(justification)
+            # remove duplicate skills
+            all_missing_skills = list(set(all_missing_skills))
+
+            # Combine into one paragraph
+            combined_justification = " ".join(all_justifications)
+
+            # Aggregate results, e.g., take max or average
+            final_score = max(all_scores)
+            end = datetime.datetime.now()
+            elapsed = end - start
+            total_seconds = int(elapsed.total_seconds())
+            hours = total_seconds // 3600
+            minutes = (total_seconds % 3600) // 60
+            seconds = total_seconds % 60
+            LOG.info("Finished running LLM check.")
+            LOG.info(f"Elapsed time: {hours}h {minutes}m {seconds}s")
+            LOG.info(f"Aggregated LLM score: {final_score}")
+            LOG.info(f"Missing skills from job description: {all_missing_skills}")
+            LOG.info(f"Justification: {combined_justification}")
         break
 
     #TODO upload the results to the google sheet tab "rated_jobs"
@@ -155,139 +314,6 @@ def rate_job_posts(job_links: list, cv_file_path: str):
 if __name__ == '__main__':
     from pprint import pprint
     job_links = [
-        {
-            "company": "Twine",
-            "job_id": "44763387acc3885356e7f2783e823a705ab6137f062e188e88cc443d70b32d39",
-            "jog_title": "Freelance Animator – Comic",
-            "link": "https://www.linkedin.com/jobs/view/freelance-animator-%E2%80%93-comic-at-twine-4352513393",
-            "location": "United States",
-        },
-        {
-            "company": "Twine",
-            "job_id": "38dc3706dc8eeff85464f3f6a87f579415a96415d3bc6b628815bf5c45b2587c",
-            "jog_title": "Freelance Animator – Comic",
-            "link": "https://uk.linkedin.com/jobs/view/freelance-animator-%E2%80%93-comic-at-twine-4352593401",
-            "location": "United Kingdom",
-        },
-        {
-            "company": "Twine",
-            "job_id": "de165b4eb47c9e71843cb81d840a0bfcce80a814de30f8aed3d7b5f76ed4ea38",
-            "jog_title": "Freelance Animator – Comic",
-            "link": "https://nz.linkedin.com/jobs/view/freelance-animator-%E2%80%93-comic-at-twine-4352543356",
-            "location": "New Zealand",
-        },
-        {
-            "company": "Twine",
-            "job_id": "37d3a97b551e5e9bbff7ac9f0b1e26f49f53cabd3e22366b557ed4adf5eb6207",
-            "jog_title": "Freelance Animator – Comic",
-            "link": "https://www.linkedin.com/jobs/view/freelance-animator-%E2%80%93-comic-at-twine-4352653391",
-            "location": "European Economic Area",
-        },
-        {
-            "company": "Twine",
-            "job_id": "6504bc75437f8a0c154a0578170ea7cb05804a9f11762556d2af108e0a0f3171",
-            "jog_title": "Freelance Animator – Comic",
-            "link": "https://au.linkedin.com/jobs/view/freelance-animator-%E2%80%93-comic-at-twine-4352563368",
-            "location": "Australia",
-        },
-        {
-            "company": "Twine",
-            "job_id": "dd3b303f9f7544f9769741c042a4352aa71f60a93803d870489f4d8bc00840d0",
-            "jog_title": "Freelance Animator – Comic",
-            "link": "https://ca.linkedin.com/jobs/view/freelance-animator-%E2%80%93-comic-at-twine-4352623501",
-            "location": "Canada",
-        },
-        {
-            "company": "Twine",
-            "job_id": "a7b6f82b0f8a64baef5d4eccdb75a37833713b60cc4dcec472d0c1873b6cef5e",
-            "jog_title": "Freelance Animator – Comic",
-            "link": "https://ch.linkedin.com/jobs/view/freelance-animator-%E2%80%93-comic-at-twine-4352543357",
-            "location": "Switzerland",
-        },
-        {
-            "company": "Twine",
-            "job_id": "79f42d657df347a878a3705acf01871ed8090a1b889671b63800e95936394525",
-            "jog_title": "Freelance Animator – Comic",
-            "link": "https://sg.linkedin.com/jobs/view/freelance-animator-%E2%80%93-comic-at-twine-4352633468",
-            "location": "Singapore",
-        },
-        {
-            "company": "GamblingCareers.com",
-            "job_id": "133681732768214ab3d8a298695637e655c78e94baf961b769a07cef43971544",
-            "jog_title": "2D Animator",
-            "link": "https://ph.linkedin.com/jobs/view/2d-animator-at-gamblingcareers-com-4362458251",
-            "location": "Philippines",
-        },
-        {
-            "company": "HAUS",
-            "job_id": "6d14a4dcd8470692764372dd999e9c512e5e6bab7aa2e0f32b7b9ea506da981e",
-            "jog_title": "2D Animator (Freelance)",
-            "link": "https://www.linkedin.com/jobs/view/2d-animator-freelance-at-haus-4364057905",
-            "location": "United States",
-        },
-        {
-            "company": "Twine",
-            "job_id": "819cf6993a6056e655c03b3faf9eaa95b733457a4968448036d14358ef8ecc43",
-            "jog_title": "Freelance Animator",
-            "link": "https://www.linkedin.com/jobs/view/freelance-animator-at-twine-4352563363",
-            "location": "European Economic Area",
-        },
-        {
-            "company": "Magic Media",
-            "job_id": "a10393abec6599fefdd7fce9e6560e3a1612281bd653c8804bd08c82612e2138",
-            "jog_title": "Junior Level Animator",
-            "link": "https://ro.linkedin.com/jobs/view/junior-level-animator-at-magic-media-4346569646",
-            "location": "Bucharest, Bucharest, Romania",
-        },
-        {
-            "company": "Magic Media",
-            "job_id": "87179176128a09761c109f6921a2a3c05f10736a54ae2c5d8e4a135b6fe29d78",
-            "jog_title": "Junior Level Animator",
-            "link": "https://pt.linkedin.com/jobs/view/junior-level-animator-at-magic-media-4346760936",
-            "location": "Porto, Portugal",
-        },
-        {
-            "company": "Cast LMS (Buri Technologies Inc)",
-            "job_id": "cc6c39d44d16284ef915f48924925aab2622d616968f07ad665d89c3a41e2fb0",
-            "jog_title": "Animator | Motion Graphics | Work From Home",
-            "link": "https://ph.linkedin.com/jobs/view/animator-motion-graphics-work-from-home-at-cast-lms-buri-technologies-inc-4363852815",
-            "location": "Quezon City, National Capital Region, Philippines",
-        },
-        {
-            "company": "Twine",
-            "job_id": "3fe23f5617b65448502705ab1406d09b9ed9e2ccf3e26dbb0df2c8ed59f73e40",
-            "jog_title": "Freelance Animator",
-            "link": "https://au.linkedin.com/jobs/view/freelance-animator-at-twine-4352504329",
-            "location": "Australia",
-        },
-        {
-            "company": "Twine",
-            "job_id": "56f7db2ea844bd216aaf18c47cae20de8683c7a2309fe193935dc6fe4bca70e1",
-            "jog_title": "Freelance Animator",
-            "link": "https://nz.linkedin.com/jobs/view/freelance-animator-at-twine-4352543355",
-            "location": "New Zealand",
-        },
-        {
-            "company": "Magic Media",
-            "job_id": "06f4624642588bb5119499af835c34e5931f9dc16af07a5aa0674e2968a0c7d8",
-            "jog_title": "Junior Level Animator",
-            "link": "https://rs.linkedin.com/jobs/view/junior-level-animator-at-magic-media-4346615300",
-            "location": "Belgrade, Serbia",
-        },
-        {
-            "company": "Magic Media",
-            "job_id": "b91446f77732ac712887e29b3f583e0a47235f28a2f74521f61d85077e35ef8d",
-            "jog_title": "Junior Level Animator",
-            "link": "https://ua.linkedin.com/jobs/view/junior-level-animator-at-magic-media-4346653548",
-            "location": "Kyiv, Ukraine",
-        },
-        {
-            "company": "Twine",
-            "job_id": "71472b2c159cc4824ed7219a766830cd5f764c05eec4b36858d7ee9f7bac7026",
-            "jog_title": "Freelance Animator",
-            "link": "https://ch.linkedin.com/jobs/view/freelance-animator-at-twine-4352713426",
-            "location": "Switzerland",
-        },
         {
             "company": "AyZar Outreach",
             "job_id": "80be68f6e59b50be808ca108e0c64f7c965f71db042245fb89afc9d6bd2e75af",
@@ -304,15 +330,6 @@ if __name__ == '__main__':
         },
     ]
 
-    job_links = [
-        {
-            "company": "Framestore",
-            "job_id": "ba4a50093e5f7da915094d3f7e307adaec668f1300ca55af3ec2403f17fc7a1b",
-            "jog_title": "3D Animator",
-            "link": "https://framestore.recruitee.com/o/animateurtrice-3d-3d-animator-3",
-            "location": "Montreal, Quebec, Canada",
-        }
-    ]
-
-    cv_file_path = r"D:\storage\documents\job_hunting\Mark Conrad - Resume - Animation.pdf"
-    rate_job_posts(job_links,cv_file_path)
+    pdf_file_path = r"D:\storage\documents\job_hunting\Mark Conrad - Resume - Animation.pdf"
+    json_token_path = r"D:\storage\programming\python\job_scanner\credentials\open_ai_api_key.json"
+    rate_job_posts(job_links,pdf_file_path, json_token_path)
