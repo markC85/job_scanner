@@ -1,6 +1,7 @@
 import torch
 import json
 import time
+import re
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from openai import RateLimitError
 from job_scanner.utils.logger_setup import start_logger
@@ -160,16 +161,41 @@ def compare_chunk_with_job(llm_client, cv_chunk: str, job_text: str) -> dict:
         }
         return bad_json
 
-class JobRanker:
-    def __init__(self, llm: LLMClient, cv_text: str, job_description: str):
-        self.llm = llm
-        self.cv_text = cv_text
-        self.job_description = job_description
+def turn_llm_result_into_dictionary(llm_result: str, required_keys: set) -> dict | None:
+    """
+    This will return a LLM which brings back a string
+    into a dictionary IF you asked the LLM to return
+    its results in a dictionary format.
 
-    def rate_job_chunk(self, job_chunk: str) -> str:
-        JOB_MATCH_PROMPT = llm_promt(self.job_description, self.job_chunk)
-        prompt = JOB_MATCH_PROMPT.format(
-            cv_text=self.cv_text,
-            job_description=job_chunk,
-        )
-        return self.llm.generate(prompt)
+    Args:
+        llm_result (str): this is the LLM result you got
+
+    Returns:
+        clean_results (dict): this is the result dictionary you asked
+                              the LLM to give you back
+    """
+    text = "".join(llm_result)
+    json_blocks = re.findall(r'\{[\s\S]*?\}', text)
+    parsed_dicts = []
+
+    for block in json_blocks:
+        try:
+            parsed_dicts.append(json.loads(block))
+        except json.JSONDecodeError:
+            pass  # silently skip schema / junk
+
+    if not parsed_dicts:
+        LOG.error("We could not find any {...} inside the LLM please make sure you asked for a ditionary back from your LLM")
+        return None
+
+    # try to avoid half broken results coming back for bad dictionaries
+
+    clean_results = [
+        d for d in parsed_dicts
+        if required_keys.issubset(d)
+    ]
+
+    if not clean_results:
+        LOG.error(f"We could not find any keys in your dictionary that matches {required_keys}")
+        return None
+    return clean_results

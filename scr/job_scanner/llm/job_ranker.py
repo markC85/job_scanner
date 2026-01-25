@@ -1,4 +1,6 @@
 import torch
+import json
+from pprint import pprint
 from job_scanner.utils.logger_setup import start_logger
 from job_scanner.llm.prompts import llm_promt
 
@@ -10,9 +12,12 @@ class JobRanker:
         self.tokenizer = tokenizer
         LOG.info("JobRanker initialized with local LLM")
 
-    def rate_job_chunk(self, cv_text: str, job_text: str, max_new_tokens: int = 100, temperature: float = 0.1, top_p: float = 0.9):
+    def rate_job_chunk(self, cv_text: str, job_text: str, max_new_tokens: int = 100, temperature: float = 0.1, top_p: float = 0.9)-> str:
         """
         Passes the CV and job description through the LLM and returns the evaluation.
+
+        Returns:
+            response (str): this is the response from the LLM model
         """
         # Get the dynamic prompt
         prompt = llm_promt(job_description=job_text, cv_text=cv_text)
@@ -30,5 +35,5 @@ class JobRanker:
             )
 
         response = self.tokenizer.decode(output[0], skip_special_tokens=True)
-        LOG.info("LLM done with responses")
+
         return response

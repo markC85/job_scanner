@@ -3,12 +3,14 @@ import trafilatura
 import re
 import os
 import numpy as np
+from pprint import pprint
 from job_scanner.utils.logger_setup import start_logger
 from job_scanner.utils.web_scrapper_linkedin import access_webpage
 from job_scanner.data.job_lookup_data import job_lookup_data
 from job_scanner.llm.openai_client import create_llm_client
 from job_scanner.llm.job_ranker import JobRanker
 from job_scanner.llm.happy_client import set_up_token, set_up_hugging_env_var
+from job_scanner.llm.llm_utils import turn_llm_result_into_dictionary
 from bs4 import BeautifulSoup
 from typing import Optional, List
 from sentence_transformers import SentenceTransformer
@@ -230,7 +232,7 @@ def rate_job_posts(job_links: list, pdf_file_path: str, json_token_path: str, ll
             "scraped_failed": 'No',
             "no_matching_job_title": '',
             "content": '',
-            "cv_chunk_count": len(cv_chunks)
+            "llm_result": None
         }
         website_info = scrape_job_page(job["link"])
         if not website_info:
@@ -271,48 +273,39 @@ def rate_job_posts(job_links: list, pdf_file_path: str, json_token_path: str, ll
             start = datetime.datetime.now()
             # Initialize the JobRanker once, probably at the top of rate_job_posts
             ranker = JobRanker(model, tokenizer)
+            llm_result = ranker.rate_job_chunk(
+                cv_text=cv_text,
+                job_text=website_info["content"],
+                max_new_tokens=150,  # optional: adjust length
+                temperature=0.1,  # optional: low temp for more deterministic scoring
+            )
 
-            all_scores = []
-            all_missing_skills = []
-            all_justifications = []
-            for cv_chunk in cv_chunks:
-                # Pass the CV and job description to the LLM
-                llm_result = ranker.rate_job_chunk(
-                    cv_text=cv_chunk,
-                    job_text=website_info["content"],
-                    max_new_tokens=150,  # optional: adjust length
-                    temperature=0.1,  # optional: low temp for more deterministic scoring
-                )
-                all_scores.append(llm_result["score"])
-                all_missing_skills.extend(llm_result.get("missing_skills", []))
-                justification = llm_result.get("justification")
-                if justification:
-                    all_justifications.append(justification)
-            # remove duplicate skills
-            all_missing_skills = list(set(all_missing_skills))
-
-            # Combine into one paragraph
-            combined_justification = " ".join(all_justifications)
-
-            # Aggregate results, e.g., take max or average
-            final_score = max(all_scores)
+            print(">> finished running LLM comparison")
             end = datetime.datetime.now()
             elapsed = end - start
             total_seconds = int(elapsed.total_seconds())
             hours = total_seconds // 3600
             minutes = (total_seconds % 3600) // 60
             seconds = total_seconds % 60
-            LOG.info("Finished running LLM check.")
-            LOG.info(f"Elapsed time: {hours}h {minutes}m {seconds}s")
-            LOG.info(f"Aggregated LLM score: {final_score}")
-            LOG.info(f"Missing skills from job description: {all_missing_skills}")
-            LOG.info(f"Justification: {combined_justification}")
-        break
+            print(f"Elapsed time: {hours}h {minutes}m {seconds}s")
 
+            required_keys = {"score", "missing_skills", "justification"}
+            result = turn_llm_result_into_dictionary(llm_result, required_keys)
+            if result:
+                llm_result_dict = result[-1]
+            else:
+                llm_result_dict = {
+                    "justification": "< LLM failed to return results >",
+                    "missing_skills": [],
+                    "score": 0,
+                }
+            LOG.debug("LLM found the following results:")
+            LOG.debug(f"LLM score: {llm_result_dict['score']}")
+            LOG.debug(f"LLM missing skills: {llm_result_dict['missing_skills']}")
+            LOG.debug(f"LLM justification: {pprint(llm_result_dict['justification'])}")
     #TODO upload the results to the google sheet tab "rated_jobs"
 
 if __name__ == '__main__':
-    from pprint import pprint
     job_links = [
         {
             "company": "AyZar Outreach",
