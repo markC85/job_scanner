@@ -3,13 +3,12 @@ import trafilatura
 import re
 import os
 import numpy as np
-from pprint import pprint
 from job_scanner.utils.logger_setup import start_logger
-from job_scanner.utils.webpage_scrapping_utils import access_html_webpage
+from job_scanner.utils.web_scrapper_linkedin import access_webpage
 from job_scanner.data.job_lookup_data import job_lookup_data
+from job_scanner.llm.openai_client import create_llm_client
 from job_scanner.llm.job_ranker import JobRanker
 from job_scanner.llm.happy_client import set_up_token, set_up_hugging_env_var
-from job_scanner.llm.llm_utils import turn_llm_result_into_dictionary
 from bs4 import BeautifulSoup
 from typing import Optional, List
 from sentence_transformers import SentenceTransformer
@@ -124,7 +123,7 @@ def scrape_job_page(url:str) -> Optional[dict]:
                                 it will return None
     """
     # fetch the web page
-    response = access_html_webpage(url)
+    response = access_webpage(url)
     if not response:
         return None
     """
@@ -186,13 +185,10 @@ def matches_job_interest(job_title: str, text: str, keywords_include: frozenset,
     """
     text = normalize_text(text)
     job_title = normalize_text(job_title)
-    if not any(kw in text for kw in keywords_include) and not any(
-        kw in job_title for kw in keywords_include
-    ):
+    if not any(kw in text for kw in keywords_include) and not any(kw in job_title for kw in keywords_include):
         LOG.debug("We did not find any for the keywords_include in the text")
         return False
     if any(kw in text for kw in keywords_exclude):
-        LOG.debug("We found an exclude word in the job text")
         return False
     return True
 
@@ -207,16 +203,14 @@ def rate_job_posts(job_links: list, pdf_file_path: str, json_token_path: str, ll
         job_links (list): this is the jobs
         pdf_file_path (str): a path to the pdf file that is your CV
         llm_model (str): this is the LLM you are using
-        json_token_path (str): This is the path to the LLM token you need to initiate it
+        json_token_path (str): This is the path to the LLM token you need to inishiate it
     """
     upload_to_google_sheets = []
-    # set up LLm model
+    llm_client = create_llm_client()
     # extract the text from a PDF CV file and chunk it for LLM comparison
     cv_text = extract_text_from_pdf(pdf_file_path)
     cv_chunks = break_text_into_chunks(cv_text, max_chunk_chars=1800, overlap=200)
     LOG.debug(f"Extracted {len(cv_chunks)} cv chunks for comparison")
-
-    # set up AI LLM client
     set_up_hugging_env_var(json_token_path)
     model_name, tokenizer, model = set_up_token(llm_model)
 
@@ -236,9 +230,7 @@ def rate_job_posts(job_links: list, pdf_file_path: str, json_token_path: str, ll
             "scraped_failed": 'No',
             "no_matching_job_title": '',
             "content": '',
-            "llm_result": '',
-            "llm_ranking": '',
-            "llm_justification": '',
+            "cv_chunk_count": len(cv_chunks)
         }
         website_info = scrape_job_page(job["link"])
         if not website_info:
@@ -279,51 +271,48 @@ def rate_job_posts(job_links: list, pdf_file_path: str, json_token_path: str, ll
             start = datetime.datetime.now()
             # Initialize the JobRanker once, probably at the top of rate_job_posts
             ranker = JobRanker(model, tokenizer)
-            llm_result = ranker.rate_job_chunk(
-                cv_text=cv_text,
-                job_text=website_info["content"],
-                max_new_tokens=150,  # optional: adjust length
-                temperature=0.1,  # optional: low temp for more deterministic scoring
-            )
 
-            print(">> finished running LLM comparison")
+            all_scores = []
+            all_missing_skills = []
+            all_justifications = []
+            for cv_chunk in cv_chunks:
+                # Pass the CV and job description to the LLM
+                llm_result = ranker.rate_job_chunk(
+                    cv_text=cv_chunk,
+                    job_text=website_info["content"],
+                    max_new_tokens=150,  # optional: adjust length
+                    temperature=0.1,  # optional: low temp for more deterministic scoring
+                )
+                all_scores.append(llm_result["score"])
+                all_missing_skills.extend(llm_result.get("missing_skills", []))
+                justification = llm_result.get("justification")
+                if justification:
+                    all_justifications.append(justification)
+            # remove duplicate skills
+            all_missing_skills = list(set(all_missing_skills))
+
+            # Combine into one paragraph
+            combined_justification = " ".join(all_justifications)
+
+            # Aggregate results, e.g., take max or average
+            final_score = max(all_scores)
             end = datetime.datetime.now()
             elapsed = end - start
             total_seconds = int(elapsed.total_seconds())
             hours = total_seconds // 3600
             minutes = (total_seconds % 3600) // 60
             seconds = total_seconds % 60
-            print(f"Elapsed time: {hours}h {minutes}m {seconds}s")
+            LOG.info("Finished running LLM check.")
+            LOG.info(f"Elapsed time: {hours}h {minutes}m {seconds}s")
+            LOG.info(f"Aggregated LLM score: {final_score}")
+            LOG.info(f"Missing skills from job description: {all_missing_skills}")
+            LOG.info(f"Justification: {combined_justification}")
+        break
 
-            required_keys = {"score", "missing_skills", "justification"}
-            result = turn_llm_result_into_dictionary(llm_result, required_keys)
-            if result:
-                llm_result_dict = result[-1]
-            else:
-                llm_result_dict = {
-                    "justification": "< LLM failed to return results >",
-                    "missing_skills": [],
-                    "score": 0,
-                }
-            LOG.debug("LLM found the following results:")
-            LOG.debug(f"LLM score: {llm_result_dict['score']}")
-            LOG.debug(f"LLM missing skills: {llm_result_dict['missing_skills']}")
-            LOG.debug(f"LLM justification: {pprint(llm_result_dict['justification'])}")
-            google_sheet_data["llm_result"] = llm_result_dict
-            google_sheet_data["missing_skills"] = ", ".join(llm_result_dict["missing_skills"])
-            google_sheet_data["llm_ranking"] = llm_result_dict["score"]
-            google_sheet_data["llm_justification"] = llm_result_dict["justification"]
-
-        upload_to_google_sheets.append(google_sheet_data)
-
-    return upload_to_google_sheets
+    #TODO upload the results to the google sheet tab "rated_jobs"
 
 if __name__ == '__main__':
-    from job_scanner.utils.webpage_scrapping_utils import job_id_from_url
-
-    url = "https://job-boards.greenhouse.io/insomniac/jobs/5783228004"
-
-
+    from pprint import pprint
     job_links = [
         {
             "company": "AyZar Outreach",
@@ -339,26 +328,8 @@ if __name__ == '__main__':
             "link": "https://framestore.recruitee.com/o/animateurtrice-3d-3d-animator-3",
             "location": "Montreal, Quebec, Canada",
         },
-        {
-            "company": "Framestore",
-            "job_id": "ba4a50093e5f7da915094d3f7e307adaec668f1300ca55af3ec2403f17fc7a1b",
-            "jog_title": "3D Animator",
-            "link": "https://framestore.recruitee.com/o/animateurtrice-3d-3d-animator-3",
-            "location": "Montreal, Quebec, Canada",
-        },
-    ]
-    job_links = [
-        {
-            "company": "Insomniac Games",
-            "job_id": job_id_from_url(url),
-            "jog_title": "Senior Animator (CONTRACT)",
-            "link": url,
-            "location": "Burbank, CA, USA",
-        }
     ]
 
-    pdf_file_path = (
-        r"D:\storage\documents\job_hunting\Mark Conrad - Resume - Animation.pdf"
-    )
+    pdf_file_path = r"D:\storage\documents\job_hunting\Mark Conrad - Resume - Animation.pdf"
     json_token_path = r"D:\storage\programming\python\job_scanner\credentials\open_ai_api_key.json"
     rate_job_posts(job_links,pdf_file_path, json_token_path)
