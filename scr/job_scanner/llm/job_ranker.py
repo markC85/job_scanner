@@ -1,8 +1,6 @@
 import torch
-import json
-from pprint import pprint
 from job_scanner.utils.logger_setup import start_logger
-from job_scanner.llm.prompts import llm_promt
+from job_scanner.llm.prompts import llm_prompt
 
 LOG = start_logger()
 
@@ -20,7 +18,7 @@ class JobRanker:
             response (str): this is the response from the LLM model
         """
         # Get the dynamic prompt
-        prompt = llm_promt(job_description=job_text, cv_text=cv_text)
+        prompt = llm_prompt(job_description=job_text, cv_text=cv_text)
 
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
 

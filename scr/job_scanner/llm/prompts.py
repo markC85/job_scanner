@@ -1,5 +1,5 @@
 
-def llm_promt(job_description: str, cv_text: str):
+def llm_prompt(job_description: str, cv_text: str):
     """
     LLM prompt that is used to keep things on rails
 
@@ -7,7 +7,7 @@ def llm_promt(job_description: str, cv_text: str):
         job_description (str): this is the job description to compare
         cv_text (str): this is the cv chunks to compare
     """
-    JOB_MATCH_PROMPT = f"""
+    job_match_prompt = f"""
     You are an experienced technical recruiter specializing in animation, games, and VFX.
     
     Your task is to evaluate how well a candidate's CV matches a specific job description.
@@ -40,4 +40,4 @@ def llm_promt(job_description: str, cv_text: str):
     Be strict. Do not inflate the score. Do not include explanations or text outside the JSON object.
     """
 
-    return JOB_MATCH_PROMPT
+    return job_match_prompt
