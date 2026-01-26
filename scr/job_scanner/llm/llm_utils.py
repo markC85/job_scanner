@@ -5,7 +5,7 @@ import re
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from openai import RateLimitError
 from job_scanner.utils.logger_setup import start_logger
-from job_scanner.llm.prompts import llm_promt
+from job_scanner.llm.prompts import llm_prompt
 
 LOG = start_logger()
 

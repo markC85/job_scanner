@@ -31,6 +31,13 @@ def set_up_token(model_name: str):
     """
     Set up the Happy client LLM so I can run it locally
 
+    You set your 'speed' of the LLM here:
+
+
+    for torch_dttype use torch.float32 for CPU base and accuracy
+    for GPU and less accurate use torch.float16
+
+
     Args:
         model_name (str): this is the model to use
         memory_use (dtype):
@@ -42,9 +49,11 @@ def set_up_token(model_name: str):
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         token=os.environ["HF_TOKEN"],
-        torch_dtype=torch.float32,
+        torch_dtype=torch.float16,  # set what model CPU or GPU
         device_map="auto",
     )
+    #model.eval()
+    #model = torch.compile(model)
     LOG.info("Local LLM loaded into memory")
 
     return model_name, tokenizer, model

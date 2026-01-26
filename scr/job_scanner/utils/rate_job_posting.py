@@ -7,7 +7,6 @@ from pprint import pprint
 from job_scanner.utils.logger_setup import start_logger
 from job_scanner.utils.web_scrapper_linkedin import access_webpage
 from job_scanner.data.job_lookup_data import job_lookup_data
-from job_scanner.llm.openai_client import create_llm_client
 from job_scanner.llm.job_ranker import JobRanker
 from job_scanner.llm.happy_client import set_up_token, set_up_hugging_env_var
 from job_scanner.llm.llm_utils import turn_llm_result_into_dictionary
@@ -205,14 +204,16 @@ def rate_job_posts(job_links: list, pdf_file_path: str, json_token_path: str, ll
         job_links (list): this is the jobs
         pdf_file_path (str): a path to the pdf file that is your CV
         llm_model (str): this is the LLM you are using
-        json_token_path (str): This is the path to the LLM token you need to inishiate it
+        json_token_path (str): This is the path to the LLM token you need to initiate it
     """
     upload_to_google_sheets = []
-    llm_client = create_llm_client()
+    # set up LLm model
     # extract the text from a PDF CV file and chunk it for LLM comparison
     cv_text = extract_text_from_pdf(pdf_file_path)
     cv_chunks = break_text_into_chunks(cv_text, max_chunk_chars=1800, overlap=200)
     LOG.debug(f"Extracted {len(cv_chunks)} cv chunks for comparison")
+
+    # set up AI LLM client
     set_up_hugging_env_var(json_token_path)
     model_name, tokenizer, model = set_up_token(llm_model)
 
@@ -313,6 +314,13 @@ if __name__ == '__main__':
             "jog_title": "Animator",
             "link": "https://www.linkedin.com/jobs/view/animator-at-ayzar-outreach-4360896392",
             "location": "California, United States",
+        },
+        {
+            "company": "Framestore",
+            "job_id": "ba4a50093e5f7da915094d3f7e307adaec668f1300ca55af3ec2403f17fc7a1b",
+            "jog_title": "3D Animator",
+            "link": "https://framestore.recruitee.com/o/animateurtrice-3d-3d-animator-3",
+            "location": "Montreal, Quebec, Canada",
         },
         {
             "company": "Framestore",
