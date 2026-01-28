@@ -50,6 +50,38 @@ def pull_google_sheet_data(
 
     return html_links
 
+def pull_all_job_ids_from_google_sheet(
+        creds_path: str,
+        scopes: list,
+        google_sheet_url: str,
+        tab_name: None | str = None) -> list:
+    """
+    This will pull all the job IDs from a google sheet
+
+    Args:
+        creds_path (str): The path to the service account credentials JSON file
+        scopes (list): The list of scopes to use for the authentication
+        google_sheet_url (str): The name of the google sheet to update
+        tab_name (str | None): The name of the tab to update, if None, the first tab will be used
+    """
+    google_client = authenticate_google_sheets(creds_path, scopes)
+    spreadsheet = google_client.open_by_url(google_sheet_url)
+
+    if tab_name:
+        sheet = spreadsheet.worksheet(tab_name)
+    else:
+        sheet = spreadsheet.get_worksheet(0)
+
+    # get all the data
+    all_data = sheet.get_all_records()
+    job_ids = []
+    for _, row in enumerate(all_data, start=2):  # start=2 because row 1 is headers
+        # Your processing here
+        LOG.debug(f"Processing row:{row}")
+        job_ids.append(row.get("Job ID"))
+
+    return job_ids
+
 
 def log_google_sheet_data(
         creds_path: str,

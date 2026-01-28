@@ -5,7 +5,7 @@ import os
 import numpy as np
 from pprint import pprint
 from job_scanner.utils.logger_setup import start_logger
-from job_scanner.utils.web_scrapper_linkedin import access_webpage
+from job_scanner.utils.webpage_scrapping_utils import access_html_webpage
 from job_scanner.data.job_lookup_data import job_lookup_data
 from job_scanner.llm.job_ranker import JobRanker
 from job_scanner.llm.happy_client import set_up_token, set_up_hugging_env_var
@@ -124,7 +124,7 @@ def scrape_job_page(url:str) -> Optional[dict]:
                                 it will return None
     """
     # fetch the web page
-    response = access_webpage(url)
+    response = access_html_webpage(url)
     if not response:
         return None
     """

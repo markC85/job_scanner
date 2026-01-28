@@ -1,9 +1,96 @@
+from job_scanner.utils.web_scrapper_linkedin import scrape_linkedin_jobs
+from job_scanner.utils.google_sheet_util import log_google_sheet_data, pull_google_sheet_data
+from job_scanner.utils.rate_job_posting import rate_job_posts
+from job_scanner.utils.logger_setup import start_logger
+import datetime
 
 
-def scrape(name):
-    # Use a breakpoint in the code line below to debug your script.
-    print(f'Hi, {name}')  # Press ⌘F8 to toggle the breakpoint.
+LOG = start_logger()
 
+def job_scanner(
+        queries: list[tuple[str,str]],
+        service_account_file: str,
+        scopes: list[str],
+        google_sheet_url: str) -> None:
+    """
+    Main function to run the job scanner tool.
+    
+    This will scan all the jobs from the different job boards and
+    compile them into a Google Sheet for easy access and tracking.
+    
+    Args:
+        queries (list of tuples): List of (keyword, location) pairs to search for jobs.
+        service_account_file (str): Path to the Google service account JSON file.
+        scopes (list of str): List of Google API scopes required.
+        google_sheet_url (str): URL of the Google Sheet to store job listings.
+    
+    """""
+    linkedin_jobs = scrape_linkedin_jobs(
+        queries=queries,
+        work_type=2,
+        job_type="F,C",
+        post_date="r604800",
+        pages=2,
+        creds_path=service_account_file,
+        scopes=scopes,
+        google_sheet_url=google_sheet_url,
+        tab_name="scraped_data",
+    )
+    if not linkedin_jobs:
+        LOG.info("No new LinkedIn jobs found from linkedin scrape.")
+        return
+
+    # log the latest job data to google sheets
+    jog_data = [
+        [
+            job["job_id"],
+            job["title"],
+            job["company"],
+            job["location"],
+            job["url"],
+            job["source"],
+            datetime.datetime.now().strftime("%m/%d/%Y"),
+            job["processed"],
+        ]
+        for job in linkedin_jobs
+    ]
+    log_google_sheet_data(
+        creds_path=service_account_file,
+        scopes=scopes,
+        google_sheet_url=google_sheet_url,
+        data=jog_data,
+        tab_name="scraped_data",
+    )
+    LOG.info(f"Logged {len(linkedin_jobs)} total job entries into google sheet from Linkedin.")
+
+def job_ratter(
+        service_account_file: str,
+        scopes: list[str],
+        google_sheet_url: str,
+        pdf_file_path: str,
+        json_token_path: str)-> None:
+    """
+    rate the jobs that have been scrapped and logged to the google sheet
+
+    Args:
+        service_account_file (str): Path to the Google service account JSON file.
+        scopes (list of str): List of Google API scopes required.
+        google_sheet_url (str): URL of the Google Sheet to store job listings.
+        pdf_file_path (str): Path to the PDF resume file.
+        json_token_path (str): Path to the JSON file containing OpenAI API key.
+    """
+
+    # pull the data from the google sheets
+    pulled_data = pull_google_sheet_data(
+        creds_path=service_account_file,
+        scopes=scopes,
+        google_sheet_url=google_sheet_url,
+        tab_name="scraped_data"
+    )
+
+    LOG.info(f"Pulled {len(pulled_data)} total job entries from google sheet.")
+
+    rate_job_posts(pulled_data,pdf_file_path, json_token_path)
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
@@ -96,4 +183,35 @@ if __name__ == '__main__':
     Scalability (add more sites, more scoring methods).
     AI Assistance (LLM or embeddings used where they make sense, not everywhere).
     """
-    print_hi('PyCharm')
+    service_account_file = r"D:\storage\programming\python\job_scanner\credentials\jogscrapperproject-0a441d890893.json"
+
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive.file",
+    ]
+    google_sheet_url = "https://docs.google.com/spreadsheets/d/1D992PCSaAX-L648D26jMa4fSVtMaOIp5Y34TpYY4ajM/edit?gid=0#gid=0"
+
+    queries = [
+        ("Animator", "Worldwide"),
+        ("Animator", "Remote"),
+        ("Animator", "Europe"),
+    ]
+
+    pdf_file_path = r"D:\storage\documents\job_hunting\Mark Conrad - Resume - Animation.pdf"
+    json_token_path = r"D:\storage\programming\python\job_scanner\credentials\open_ai_api_key.json"
+    service_account_file = r"D:\storage\programming\python\job_scanner\credentials\jogscrapperproject-0a441d890893.json"
+
+    job_scanner(
+        queries=queries,
+        service_account_file=service_account_file,
+        scopes=scopes,
+        google_sheet_url=google_sheet_url,
+    )
+
+    job_ratter(
+        service_account_file=service_account_file,
+        scopes=scopes,
+        google_sheet_url=google_sheet_url,
+        pdf_file_path=pdf_file_path,
+        json_token_path=json_token_path
+    )

@@ -140,6 +140,8 @@ def job_lookup_data(data_type: int = 0) -> Optional[Union[frozenset[str],tuple[s
                 "entry-level",
                 "trainee",
                 "apprentice",
+                "junior-level",
+                "junior",
                 # Teaching / mentoring
                 "teacher",
                 "lecturer",
@@ -169,7 +171,23 @@ def job_lookup_data(data_type: int = 0) -> Optional[Union[frozenset[str],tuple[s
                 "crypto",
                 "nft",
                 "web3",
+                "2d animator",
             }
         )
         return ignore_key_words
+    elif data_type == 5:
+        ignore_job_title_key_words = frozenset(
+            {
+                "2d animator",
+                "junior",
+                "intern",
+                "internship",
+                "trainee",
+                "entry level",
+                "entry-level",
+                "assistant",
+                "associate",
+            }
+        )
+        return ignore_job_title_key_words
     return None
