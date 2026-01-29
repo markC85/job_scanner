@@ -434,6 +434,7 @@ def show_ui() -> MainWindow:
 
     return _window
 
-# start the UI
-show_ui()
-sys.exit(_app.exec())
+if __name__ == "__main__":
+    # start the UI
+    show_ui()
+    sys.exit(_app.exec())
