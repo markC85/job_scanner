@@ -186,10 +186,13 @@ def matches_job_interest(job_title: str, text: str, keywords_include: frozenset,
     """
     text = normalize_text(text)
     job_title = normalize_text(job_title)
-    if not any(kw in text for kw in keywords_include) and not any(kw in job_title for kw in keywords_include):
+    if not any(kw in text for kw in keywords_include) and not any(
+        kw in job_title for kw in keywords_include
+    ):
         LOG.debug("We did not find any for the keywords_include in the text")
         return False
     if any(kw in text for kw in keywords_exclude):
+        LOG.debug("We found an exclude word in the job text")
         return False
     return True
 
@@ -233,7 +236,9 @@ def rate_job_posts(job_links: list, pdf_file_path: str, json_token_path: str, ll
             "scraped_failed": 'No',
             "no_matching_job_title": '',
             "content": '',
-            "llm_result": None
+            "llm_result": '',
+            "llm_ranking": '',
+            "llm_justification": '',
         }
         website_info = scrape_job_page(job["link"])
         if not website_info:
@@ -304,9 +309,21 @@ def rate_job_posts(job_links: list, pdf_file_path: str, json_token_path: str, ll
             LOG.debug(f"LLM score: {llm_result_dict['score']}")
             LOG.debug(f"LLM missing skills: {llm_result_dict['missing_skills']}")
             LOG.debug(f"LLM justification: {pprint(llm_result_dict['justification'])}")
-    #TODO upload the results to the google sheet tab "rated_jobs"
+            google_sheet_data["llm_result"] = llm_result_dict
+            google_sheet_data["missing_skills"] = ", ".join(llm_result_dict["missing_skills"])
+            google_sheet_data["llm_ranking"] = llm_result_dict["score"]
+            google_sheet_data["llm_justification"] = llm_result_dict["justification"]
+
+        upload_to_google_sheets.append(google_sheet_data)
+
+    return upload_to_google_sheets
 
 if __name__ == '__main__':
+    from job_scanner.utils.webpage_scrapping_utils import job_id_from_url
+
+    url = "https://job-boards.greenhouse.io/insomniac/jobs/5783228004"
+
+
     job_links = [
         {
             "company": "AyZar Outreach",
@@ -330,7 +347,18 @@ if __name__ == '__main__':
             "location": "Montreal, Quebec, Canada",
         },
     ]
+    job_links = [
+        {
+            "company": "Insomniac Games",
+            "job_id": job_id_from_url(url),
+            "jog_title": "Senior Animator (CONTRACT)",
+            "link": url,
+            "location": "Burbank, CA, USA",
+        }
+    ]
 
-    pdf_file_path = r"D:\storage\documents\job_hunting\Mark Conrad - Resume - Animation.pdf"
+    pdf_file_path = (
+        r"D:\storage\documents\job_hunting\Mark Conrad - Resume - Animation.pdf"
+    )
     json_token_path = r"D:\storage\programming\python\job_scanner\credentials\open_ai_api_key.json"
     rate_job_posts(job_links,pdf_file_path, json_token_path)

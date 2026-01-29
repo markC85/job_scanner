@@ -130,43 +130,6 @@ def job_lookup_data(data_type: int = 0) -> Optional[Union[frozenset[str],tuple[s
                 "photoshop",
                 # Wrong Job Names
                 "illustrator",
-                # Seniority mismatch
-                "intern",
-                "internship",
-                "junior",
-                "graduate",
-                "student",
-                "entry level",
-                "entry-level",
-                "trainee",
-                "apprentice",
-                "junior-level",
-                "junior",
-                # Teaching / mentoring
-                "teacher",
-                "lecturer",
-                "instructor",
-                "professor",
-                "teaching assistant",
-                # Non-production roles
-                "recruiter",
-                "talent acquisition",
-                "hr",
-                "human resources",
-                "sales",
-                "marketing",
-                "social media manager",
-                "community manager",
-                # Volunteer / unpaid
-                "volunteer",
-                "unpaid",
-                "pro bono",
-                # Non-relevant animation usage
-                "animation tester",
-                "qa",
-                "quality assurance",
-                "motion capture technician",
-                "mocap operator",
                 # Red flags
                 "crypto",
                 "nft",

@@ -1,4 +1,4 @@
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 import os
 import json
 import torch
@@ -42,18 +42,24 @@ def set_up_token(model_name: str):
         model_name (str): this is the model to use
         memory_use (dtype):
     """
-
     model_name = happy_model_options(model_name)
+
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_compute_dtype=torch.float16,# set what model CPU or GPU
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_type="nf4",
+    )
 
     tokenizer = AutoTokenizer.from_pretrained(model_name, token=os.environ["HF_TOKEN"])
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         token=os.environ["HF_TOKEN"],
-        torch_dtype=torch.float16,  # set what model CPU or GPU
-        device_map="auto",
+        quantization_config=bnb_config,
+        #device_map="cuda",
     )
-    #model.eval()
-    #model = torch.compile(model)
+    model.eval()
+    model = torch.compile(model)
     LOG.info("Local LLM loaded into memory")
 
     return model_name, tokenizer, model

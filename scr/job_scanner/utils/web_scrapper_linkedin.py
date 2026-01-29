@@ -134,7 +134,7 @@ def scrape_linkedin_jobs(
                     f"Added Job: {title_el.get_text(strip=True)} at {company_el.get_text(strip=True)}"
                 )
 
-                sleep_time = random.uniform(1.8, 3.6)
+            sleep_time = random.uniform(1.8, 3.6)
 
             LOG.debug(f"Sleeping for {sleep_time:.2f} seconds")
             time.sleep(sleep_time)
