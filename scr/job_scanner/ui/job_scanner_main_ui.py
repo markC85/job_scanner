@@ -3,6 +3,8 @@ import json
 import webbrowser
 from pathlib import Path
 from job_scanner.utils.logger_setup import start_logger
+from job_scanner.ui.about_ui import AboutDialog
+from job_scanner.ui.linkedin_setting_ui import LinkedinSettings
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
@@ -16,9 +18,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QScrollArea,
-    QComboBox,
     QMessageBox,
-    QDialog,
     QPlainTextEdit
 )
 
@@ -28,52 +28,7 @@ LOG = start_logger()
 _app = None
 _window = None
 
-class AboutDialog(QDialog):
-    def __init__(self, version: str, parent=None):
-        super().__init__(parent)
 
-        self.setWindowTitle("About Job Scanner")
-        self.setFixedSize(420, 300)
-
-        layout = QVBoxLayout(self)
-        layout.setAlignment(Qt.AlignTop)
-
-        title = QLabel("<b>Job Scanner</b>")
-        version = QLabel(f"Version {version}")
-
-        description = QLabel(
-            "I got so tiered of looking for new jobs so I built a tool to speed"
-            "up the process of doing this. This tool will scrape from websites and"
-            "put that data into a google sheet and from there rate and categorize"
-            "the jobs you find."
-        )
-        description.setWordWrap(True)
-
-        links = QLabel(
-            """
-            <a href="https://github.com/markC85">GitHub</a><br>
-            <a href="https://mark_conrad.artstation.com">Animation Portfolio</a>
-            <a href="http://www.linkedin.com/in/markaconrad">Linkedin Profile</a>
-            """
-        )
-        links.setOpenExternalLinks(True)
-        links.setTextInteractionFlags(Qt.TextBrowserInteraction)
-        links.setCursor(Qt.PointingHandCursor)
-
-        email = QLabel("Email: markconrad.animator@gmail.com")
-        email.setTextInteractionFlags(Qt.TextBrowserInteraction)
-
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(self.accept)
-
-        layout.addWidget(title)
-        layout.addWidget(version)
-        layout.addWidget(description)
-        layout.addSpacing(10)
-        layout.addWidget(links)
-        layout.addWidget(email)
-        layout.addStretch()
-        layout.addWidget(close_btn)
 
 class MainWindow(QMainWindow):
     """
@@ -265,6 +220,7 @@ class MainWindow(QMainWindow):
 
         # File menu
         file_menu = menu_bar.addMenu("File")
+        tools_menu = menu_bar.addMenu("Tools")
         help_menu = menu_bar.addMenu("Help")
 
         # about menu options
@@ -291,11 +247,19 @@ class MainWindow(QMainWindow):
         self.google_sheet.setShortcut("Ctrl+G")
         self.google_sheet.setStatusTip("Open Google Sheets in your browser")
 
+        # linekedin scraper preset
+        self.linkedin_preset = QAction("Linkedin Settings", self)
+        self.linkedin_preset.setShortcut("Ctrl+l")
+        self.linkedin_preset.setStatusTip("Set the Linkedin Scraper Settings")
+
         # Add the action to the File menu
         file_menu.addAction(self.save_preset)
         file_menu.addAction(self.load_preset)
         file_menu.addAction(self.google_sheet)
         file_menu.addAction(self.exit_action)
+
+        # Add the action to the Tools menu
+        tools_menu.addAction(self.linkedin_preset)
 
         # Add the action to the About menu
         help_menu.addAction(self.about_project)
@@ -350,6 +314,8 @@ class MainWindow(QMainWindow):
 
         self.about_project.triggered.connect(self._show_about_dialog)
 
+        self.linkedin_preset.triggered.connect(self._show_linkedin_settings)
+
         self.scrape_websites_btn.clicked.connect(self._run_scrape_websites)
         self.rate_jobs_btn.clicked.connect(self._run_rate_jobs)
 
@@ -391,6 +357,10 @@ class MainWindow(QMainWindow):
 
     def _show_about_dialog(self) -> None:
         dlg = AboutDialog(self.version, self)
+        dlg.exec()
+
+    def _show_linkedin_settings(self) -> None:
+        dlg = LinkedinSettings(self.version, self)
         dlg.exec()
 
     def _set_file_path(self,description: str, filed_to_fill_out: str, file_filter: str) -> None:

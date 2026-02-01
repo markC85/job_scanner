@@ -80,7 +80,7 @@ def job_ratter(
         json_token_path (str): Path to the JSON file containing OpenAI API key.
     """
 
-    # pull the data from the google sheets
+    # pull the data from the Google sheets
     pulled_data = pull_google_sheet_data(
         creds_path=service_account_file,
         scopes=scopes,
