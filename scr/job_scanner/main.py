@@ -24,7 +24,9 @@ def job_scanner(
         scopes (list of str): List of Google API scopes required.
         google_sheet_url (str): URL of the Google Sheet to store job listings.
     
-    """""
+    """
+    timer_start = datetime.datetime.now()
+
     linkedin_jobs = scrape_linkedin_jobs(
         queries=queries,
         work_type=2,
@@ -61,7 +63,18 @@ def job_scanner(
         data=jog_data,
         tab_name="scraped_data",
     )
-    LOG.info(f"Logged {len(linkedin_jobs)} total job entries into google sheet from Linkedin.")
+    # Calculate elapsed time
+    timer_end = datetime.datetime.now()
+    elapsed = timer_end - timer_start
+    total_seconds = int(elapsed.total_seconds())
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+
+    LOG.info(
+        f"Logged {len(linkedin_jobs)} total job entries into google sheet from Linkedin."
+    )
+    LOG.info(f"Elapsed time Tool Ran: {hours}h {minutes}m {seconds}s")
 
 def job_ratter(
         service_account_file: str,
@@ -79,6 +92,7 @@ def job_ratter(
         pdf_file_path (str): Path to the PDF resume file.
         json_token_path (str): Path to the JSON file containing OpenAI API key.
     """
+    timer_start = datetime.datetime.now()
 
     # pull the data from the Google sheets
     pulled_data = pull_google_sheet_data(
@@ -97,14 +111,17 @@ def job_ratter(
             job["job_id"],
             job["rating_vs_cv"],
             job["missing_skills"],
-            job["title"],
+            job["jog_title"],
             job["company"],
             job["location"],
             job["link"],
             job["date_processed"],
             job["cv_used"],
             job["scraped_failed"],
+            job["scraped_failed_error_message"],
             job["no_matching_job_title"],
+            job["llm_ranking"],
+            job["llm_justification"]
         ]
         for job in upload_to_google_sheets
     ]
@@ -116,4 +133,14 @@ def job_ratter(
         data=jog_data,
         tab_name="processed_jobs",
     )
-    LOG.info(f"Logged {len(jog_data)} jobs from the LLM processing onto the processed_jobs tab in job_scraper sheet.")
+    # Calculate elapsed time
+    timer_end = datetime.datetime.now()
+    elapsed = timer_end - timer_start
+    total_seconds = int(elapsed.total_seconds())
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+    LOG.info(
+        f"Logged {len(jog_data)} jobs from the LLM processing onto the processed_jobs tab in job_scraper sheet."
+    )
+    LOG.info(f"Elapsed time Tool Ran: {hours}h {minutes}m {seconds}s")
