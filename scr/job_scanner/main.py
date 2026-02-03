@@ -7,6 +7,24 @@ import datetime
 
 LOG = start_logger()
 
+"""
+This is the tool I am creating to improve my Job search process.
+I want to be able to learn more how to use LLM's and AI agents to help
+me create better models.
+
+Tool Scope:
+- Scrape job postings from various job boards based on user-defined queries.
+- Log the scraped job postings into a Google Sheet for easy access and tracking.
+- Rate the job postings against a provided resume using an LLM to determine fit.
+
+Things I want to improve on this tool:
+"""
+# TODO: I want to improve the way the LLM can rate the jobs postings via JSON PARSING.
+# TODO: I want to add more job boards to scrape from (Indeed, Glassdoor, etc)
+# TODO: I want to train my LLM to parse data correctly from websites so it can auto build the JSON structure.
+# TODO: I want to build a system that auto build a resume based on the job description and my experience to keep
+# my resume to 1000 words and only have relevant experience for the job I am applying for.
+
 def job_scanner(
         queries: list[tuple[str,str]],
         service_account_file: str,
