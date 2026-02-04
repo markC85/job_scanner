@@ -5,6 +5,7 @@ from pathlib import Path
 from job_scanner.utils.logger_setup import start_logger
 from job_scanner.ui.about_ui import AboutDialog
 from job_scanner.ui.linkedin_setting_ui import LinkedinSettings
+from job_scanner.ui.manually_entered_data_ui import ManuallyEnteredDataUI
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
@@ -168,7 +169,7 @@ class MainWindow(QMainWindow):
             "Software Engineer,New York, NY\n"
             "Data Scientist,San Francisco, CA"
         )
-        linkedin_search_pair_label = QLabel("Google Sheet Scopes:")
+        linkedin_search_pair_label = QLabel("Scrape keyword search:")
 
         main_layout.addWidget(tool_description_label)
         main_layout.addWidget(scope_label)
@@ -198,6 +199,10 @@ class MainWindow(QMainWindow):
                 main_layout.addWidget(self.set_google_sheet_path_line_edit)
                 self.set_google_sheet_path_btn = QPushButton(f"Set {label_text.lower()[:-1]}")
                 main_layout.addWidget(self.set_google_sheet_path_btn)
+            elif label_text == "Google Sheet URL:":
+                self.google_url_line_edit = QLineEdit()
+                self.google_url_line_edit.setPlaceholderText(f"Enter {label_text.lower()[:-1]}")
+                main_layout.addWidget(self.google_url_line_edit)
             else:
                 line_edit = QLineEdit()
                 line_edit.setPlaceholderText(f"Enter {label_text.lower()[:-1]}")
@@ -252,6 +257,11 @@ class MainWindow(QMainWindow):
         self.linkedin_preset.setShortcut("Ctrl+l")
         self.linkedin_preset.setStatusTip("Set the Linkedin Scraper Settings")
 
+        # manually entered data
+        self.manually_entered_data = QAction("Manually Entered Data Settings", self)
+        self.manually_entered_data.setShortcut("Ctrl+M")
+        self.manually_entered_data.setStatusTip("Set the Manually Entered Data Settings")
+
         # Add the action to the File menu
         file_menu.addAction(self.save_preset)
         file_menu.addAction(self.load_preset)
@@ -260,6 +270,7 @@ class MainWindow(QMainWindow):
 
         # Add the action to the Tools menu
         tools_menu.addAction(self.linkedin_preset)
+        tools_menu.addAction(self.manually_entered_data)
 
         # Add the action to the About menu
         help_menu.addAction(self.about_project)
@@ -315,6 +326,7 @@ class MainWindow(QMainWindow):
         self.about_project.triggered.connect(self._show_about_dialog)
 
         self.linkedin_preset.triggered.connect(self._show_linkedin_settings)
+        self.manually_entered_data.triggered.connect(self._show_manually_entered_data_settings)
 
         self.scrape_websites_btn.clicked.connect(self._run_scrape_websites)
         self.rate_jobs_btn.clicked.connect(self._run_rate_jobs)
@@ -361,6 +373,16 @@ class MainWindow(QMainWindow):
 
     def _show_linkedin_settings(self) -> None:
         dlg = LinkedinSettings(self.version, self)
+        dlg.exec()
+
+    def _show_manually_entered_data_settings(self) -> None:
+        dlg = ManuallyEnteredDataUI(
+            self.version,
+            parent=self,
+            google_url=self.google_url_line_edit.text(),
+            creds_path = self.set_google_sheet_path_line_edit.text(),
+            scopes = self.google_sheet_scope.toPlainText().splitlines(),
+        )
         dlg.exec()
 
     def _set_file_path(self,description: str, filed_to_fill_out: str, file_filter: str) -> None:

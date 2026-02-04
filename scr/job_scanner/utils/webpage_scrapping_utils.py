@@ -1,6 +1,8 @@
 import random
 import requests
 import hashlib
+import string
+import secrets
 import os
 from urllib.parse import urlparse, parse_qsl, urlunparse
 from requests.adapters import HTTPAdapter
@@ -11,6 +13,23 @@ from typing import Optional
 
 
 LOG = start_logger()
+
+
+
+def random_alphanumeric(length: int = 12) -> str:
+    """
+    Generate a random alphanumeric string of specified length.
+
+    Args:
+        length (int): Length of the generated string.
+
+    Returns:
+        random_string (str): Random alphanumeric string.
+    """
+    alphabet = string.ascii_letters + string.digits
+    random_string = ''.join(secrets.choice(alphabet) for _ in range(length))
+    return random_string
+
 
 def access_json_api(
     url: str,
