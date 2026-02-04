@@ -1,1 +1,7 @@
 /credentials/
+*.pyc
+*.pyo
+*.pyd
+credentials/jogscrapperproject-0a441d890893.json
+credentials/open_ai_api_key.json
+credentials/saved_profile_data.json
