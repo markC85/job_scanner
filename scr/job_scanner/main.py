@@ -139,7 +139,7 @@ def job_ratter(
             job["scraped_failed_error_message"],
             job["no_matching_job_title"],
             job["llm_ranking"],
-            job["llm_justification"]
+            job["llm_justification"],
         ]
         for job in upload_to_google_sheets
     ]

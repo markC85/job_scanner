@@ -87,11 +87,8 @@ def set_up_token(model_name: str) -> tuple[str, AutoTokenizer, AutoModelForCausa
     model = torch.compile(model)
     LOG.info("Local LLM loaded into memory")
 
-    LOG.debug("Model:", model.config._name_or_path)
-    LOG.debug("Device:", next(model.parameters()).device)
-    LOG.debug("Is CUDA available:", torch.cuda.is_available())
-    if torch.cuda.is_available():
-        # If you see cuda:0 and your GPU name, you’re running it locally on GPU.
-        LOG.debug("GPU:", torch.cuda.get_device_name(0))
+    LOG.debug(f"Model: {model.config._name_or_path}")
+    LOG.debug(f"Device: {next(model.parameters()).device}")
+    LOG.debug(f"Is CUDA available: {torch.cuda.is_available()}")
 
     return model_name, tokenizer, model

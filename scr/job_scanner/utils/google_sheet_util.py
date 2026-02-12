@@ -136,20 +136,40 @@ def update_google_sheet(
 
     Args:
         google_client (gspread.Client): The authenticated gspread client
-        data (list): The data to append to the google sheet
+        data (list): The data to append to the google sheet. Must be list of lists: [[row1], [row2], ...]
         google_sheet_url (str): The name of the google sheet to update
         tab_name (str | None): The name of the tab to update, if None, the first tab will be used
     """
+    if not data or len(data) == 0:
+        LOG.warning("No data to append to Google Sheet")
+        return None
+
     spreadsheet = google_client.open_by_url(google_sheet_url)
     if tab_name:
         sheet = spreadsheet.worksheet(tab_name)
     else:
         sheet = spreadsheet.get_worksheet(0)
 
-    # insert a blank for first
-    sheet.insert_row([], index=2)
-
-    # add data to the sheet
-    sheet.append_rows(data)
-
-    LOG.debug(f"Data appended to Google Sheet:\n {pprint(data)}")
+    try:
+        # For large datasets, it's more reliable to append rows
+        # sheet.append_rows() handles multiple rows in one API call
+        sheet.append_rows(data)
+        LOG.info(f"Successfully appended {len(data)} rows to Google Sheet")
+        LOG.debug(f"Data appended to Google Sheet:\n {pprint(data)}")
+    except Exception as e:
+        LOG.error(f"Error appending rows: {str(e)}")
+        # Fallback: append rows in smaller batches
+        batch_size = 10
+        for i in range(0, len(data), batch_size):
+            batch = data[i:i+batch_size]
+            try:
+                sheet.append_rows(batch)
+                LOG.info(f"Appended batch {i//batch_size + 1} ({len(batch)} rows)")
+            except Exception as batch_error:
+                LOG.error(f"Error appending batch {i//batch_size + 1}: {str(batch_error)}")
+                # Final fallback: append one row at a time
+                for row in batch:
+                    try:
+                        sheet.append_row(row)
+                    except Exception as row_error:
+                        LOG.error(f"Error appending single row: {str(row_error)}")

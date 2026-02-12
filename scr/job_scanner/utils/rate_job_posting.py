@@ -239,6 +239,7 @@ def rate_job_posts(job_links: list, pdf_file_path: str, json_token_path: str, ll
             "llm_result": '',
             "llm_ranking": '',
             "llm_justification": '',
+            "scraped_failed_error_message": '',
         }
         website_info = scrape_job_page(job["link"])
         if not website_info:
@@ -308,57 +309,11 @@ def rate_job_posts(job_links: list, pdf_file_path: str, json_token_path: str, ll
             LOG.debug("LLM found the following results:")
             LOG.debug(f"LLM score: {llm_result_dict['score']}")
             LOG.debug(f"LLM missing skills: {llm_result_dict['missing_skills']}")
-            LOG.debug(f"LLM justification: {pprint(llm_result_dict['justification'])}")
+            LOG.debug(f"LLM justification: {llm_result_dict['justification']}")
             google_sheet_data["llm_result"] = llm_result_dict
             google_sheet_data["missing_skills"] = ", ".join(llm_result_dict["missing_skills"])
             google_sheet_data["llm_ranking"] = llm_result_dict["score"]
             google_sheet_data["llm_justification"] = llm_result_dict["justification"]
 
         upload_to_google_sheets.append(google_sheet_data)
-
     return upload_to_google_sheets
-
-if __name__ == '__main__':
-    from job_scanner.utils.webpage_scrapping_utils import job_id_from_url
-
-    url = "https://job-boards.greenhouse.io/insomniac/jobs/5783228004"
-
-
-    job_links = [
-        {
-            "company": "AyZar Outreach",
-            "job_id": "80be68f6e59b50be808ca108e0c64f7c965f71db042245fb89afc9d6bd2e75af",
-            "jog_title": "Animator",
-            "link": "https://www.linkedin.com/jobs/view/animator-at-ayzar-outreach-4360896392",
-            "location": "California, United States",
-        },
-        {
-            "company": "Framestore",
-            "job_id": "ba4a50093e5f7da915094d3f7e307adaec668f1300ca55af3ec2403f17fc7a1b",
-            "jog_title": "3D Animator",
-            "link": "https://framestore.recruitee.com/o/animateurtrice-3d-3d-animator-3",
-            "location": "Montreal, Quebec, Canada",
-        },
-        {
-            "company": "Framestore",
-            "job_id": "ba4a50093e5f7da915094d3f7e307adaec668f1300ca55af3ec2403f17fc7a1b",
-            "jog_title": "3D Animator",
-            "link": "https://framestore.recruitee.com/o/animateurtrice-3d-3d-animator-3",
-            "location": "Montreal, Quebec, Canada",
-        },
-    ]
-    job_links = [
-        {
-            "company": "Insomniac Games",
-            "job_id": job_id_from_url(url),
-            "jog_title": "Senior Animator (CONTRACT)",
-            "link": url,
-            "location": "Burbank, CA, USA",
-        }
-    ]
-
-    pdf_file_path = (
-        r"D:\storage\documents\job_hunting\Mark Conrad - Resume - Animation.pdf"
-    )
-    json_token_path = r"D:\storage\programming\python\job_scanner\credentials\open_ai_api_key.json"
-    rate_job_posts(job_links,pdf_file_path, json_token_path)
