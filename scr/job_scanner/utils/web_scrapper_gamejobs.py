@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 from typing import Optional
+from pprint import pprint
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
@@ -135,6 +136,7 @@ def _wait_for_job_list(page) -> None:
 
 
 def scrape_gamejobs(
+    job_title_keywords: list,
     base_url: str = "https://gamejobs.co/search",
     limit: int = 200,
     headless: bool = False,
@@ -144,43 +146,44 @@ def scrape_gamejobs(
     Scrape GameJobs.co for animator job listings.
 
     Args:
-        base_url: URL to scrape; can include query params for date filtering
+        job_title_keywords (list): List of keywords to filter job titles
+                  (e.g., ["animator", "technical artist"]). Only listings with
+                   at least one of these keywords as a whole word in the title
+                   will be included. This allows for more flexible filtering
+                   (e.g., including both "animator" and "technical artist" roles)
+                   while still ensuring relevance.
+
+        base_url (str): URL to scrape; can include query params for date filtering
                   (e.g. "?a=7d" for past 7 days). details: Whether to visit each
                   job detail page to extract apply_url and description (slower).
                   limit: Max number of animator jobs to return. headless: Whether
                   to run the browser in headless mode (no UI). delay_s: Seconds to
                   wait between requests when fetching job details (to be polite).
-        detail: If True, the scraper will visit each individual job listing page
-                to extract additional details like the application URL and job
-                description. This can provide richer data but will significantly
-                increase the time taken to complete the scraping process, especially
-                if there are many listings. If False, the scraper will only extract
-                information available on the listing page, which is faster but may
-                miss some details.
-        limit: This parameter sets an upper bound on the number of animator job
+
+        limit (int): This parameter sets an upper bound on the number of animator job
                listings to return. Since the scraper filters for "animator" in the
                job title, it may encounter many listings that do not match this criterion.
                Setting a reasonable limit helps ensure that the scraper completes in a
                timely manner and does not overload the target website with too many requests.
-        headless: Running the browser in headless mode means that it will operate without
+
+        headless (bool): Running the browser in headless mode means that it will operate without
                   opening a visible window. This is useful for running the scraper on
                   servers or in automated environments where a UI is not needed. However,
                   during development or debugging, it can be helpful to see the browser
                   actions, so setting headless to False allows you to watch the scraping
                   process in real time.
-        delay_s: When fetching details from individual job pages, it's important to be
-                 polite and avoid sending too many requests in a short period of time,
-                 which can lead to being blocked by the website. The delay_s parameter
-                 allows you to specify how many seconds to wait between requests when
-                 visiting job detail pages. A delay of around 0.5 to 1 second is often
-                 recommended for web scraping to balance speed and politeness.
+
+        job_ids_used (set[str]): A set of job ID hashes that have already been seen and added
+                   to the Google Sheet.This is used to avoid adding duplicate job listings to
+                   the sheet. When the scraper encounters a job listing, it will extract the job
+                   ID from the URL and check if it is in this set. If it is, the scraper will skip
+                   that listing, ensuring that only new and unique jobs are added to the Google Sheet.
+                   This is particularly important for websites like GameJobs.co, where the same job may
+                   appear multiple times in different searches or over time.
     Returns:
         (list[dict]): list of dicts matching your Google Sheets schema, filtered to animator titles only.
     """
     scraped_at = datetime.now(timezone.utc).isoformat()
-
-    # Filter: ONLY keep job titles containing "animator" as a whole word (case-insensitive)
-    animator_title_re = re.compile(r"\banimator\b", re.IGNORECASE)
 
     # Heuristic: GameJobs job detail pages commonly include "-at-" in the slug
     job_href_re = re.compile(r"^/[^?#]*-at-[^?#]+", re.IGNORECASE)
@@ -206,9 +209,20 @@ def scrape_gamejobs(
 
         jobs: list[SheetJobRecord] = []
 
+        keyword_patterns = [
+            re.compile(rf"\b{re.escape(kw)}\b", re.IGNORECASE) for kw in job_title_keywords
+        ]
         for a in soup.find_all("a", href=True):
             href = a["href"].strip()
+
+            # skip non-job links first
             if not job_href_re.match(href):
+                LOG.debug(f"Skipping non-job link with href: {href}")
+                continue
+
+            # skip if none of the keywords appear in the href
+            if not any(p.search(href) for p in keyword_patterns):
+                LOG.debug(f"Skipping job link that does not match keywords. href: {href}")
                 continue
 
             title, company, location, posted = _extract_list_row_fields(a, job_href_re)
@@ -221,10 +235,6 @@ def scrape_gamejobs(
                 )
                 continue
             job_ids_used.add(job_id)
-
-            # FILTER: only keep "animator" in job title
-            if not title or not animator_title_re.search(title):
-                continue
 
             job = SheetJobRecord(
                 source="gamejobs.com",
@@ -245,4 +255,7 @@ def scrape_gamejobs(
         browser.close()
 
     rows = [_job_to_sheet_row(j) for j in jobs]
+
+    LOG.info(f"Scraped {len(rows)} total jobs from GameJobs.co with keywords {job_title_keywords}.")
+    LOG.debug(f"Found the following jobs: \n{pprint(rows)}")
     return rows

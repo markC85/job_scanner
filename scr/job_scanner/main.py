@@ -91,10 +91,11 @@ def job_scanner(
         "past_31_days": "https://gamejobs.co/search?a=31d",
     }
     gamejobs_jobs = scrape_gamejobs(
-        base_url=date_scraped_url['past_7_days'], # change this to scrape different time ranges
+        base_url=date_scraped_url['past_31_days'], # change this to scrape different time ranges
         limit=200,
         headless=False,  # set True for headless runs
         job_ids_used=seen_job_ids,
+        job_title_keywords=['animator','tech artict', 'technical artist']
     )
     upload_to_google_sheets += gamejobs_jobs
     if not gamejobs_jobs:

@@ -107,7 +107,7 @@ def scrape_linkedin_jobs(
                     continue
 
                 job_card = SheetJobRecord(
-                    source="LinkedIn",
+                    source="LinkedIn.com",
                     title=title_el.get_text(strip=True),
                     company=company_el.get_text(strip=True),
                     location=location_el.get_text(strip=True) if location_el else "",
