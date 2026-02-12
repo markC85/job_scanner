@@ -12,7 +12,23 @@ def scrape_hitmarker_jobs(
     pull_min_time: float = 1.5,
     pull_max_time: float = 3.0,
     base_url: str = "https://hitmarker.net/api/jobs",
+    job_ids_used:set[str] = set(),
 ) -> list[dict]:
+    """
+    Scrapes job listings from Hitmarker based on the provided keyword and number of pages.
+
+    Args:
+        keyword (str): The search keyword for job listings.
+        pages (int): The number of pages to scrape. Default is 3.
+        pull_min_time (float): Minimum time to wait between requests in seconds. Default is 1.5.
+        pull_max_time (float): Maximum time to wait between requests in seconds. Default is 3.0.
+        base_url (str): The base URL for the Hitmarker API. Default is "https://hitmarker.net/api/jobs".
+        job_ids_used (set[str]): A set of job IDs that have already been processed to avoid duplicates.
+
+    Returns:
+        list[dict]: A list of dictionaries, each representing a job listing with details such as job ID,
+                    title, company, location, URL, snippet, source, and processed status.
+    """
 
     jobs = []
 
@@ -44,6 +60,13 @@ def scrape_hitmarker_jobs(
         for job in job_list:
             job_url = f"https://hitmarker.net/jobs/{job['slug']}"
             job_id = job_id_from_url(job_url)
+
+            if job_id in job_ids_used:
+                LOG.info(
+                    f"Job already exists in Google Sheet. Skipping Job: {job.get("title", "")} at {job.get("company", {}).get("name", "")}"
+                )
+                continue
+            job_ids_used.add(job_id)
 
             job_card = {
                 "job_id": job_id,

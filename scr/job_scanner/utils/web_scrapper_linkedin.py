@@ -1,10 +1,11 @@
 import time
 import random
+from datetime import datetime, timezone
 from job_scanner.utils.logger_setup import start_logger
 from bs4 import BeautifulSoup
 from job_scanner.utils.webpage_scrapping_utils import access_html_webpage, job_id_from_url
-from job_scanner.utils.google_sheet_util import pull_all_job_ids_from_google_sheet
 from job_scanner.data.job_lookup_data import job_lookup_data
+from job_scanner.models.sheet_job_record import SheetJobRecord
 
 
 LOG = start_logger()
@@ -14,13 +15,8 @@ def scrape_linkedin_jobs(
         work_type: int,
         post_date: str,
         job_type: str,
+        job_ids_used:set[str] = set(),
         pages: int = 2,
-        creds_path: str = "",
-        scopes: list[str] = [],
-        google_sheet_url: str = "",
-        tab_name = "",
-        pull_min_time: float = 1.8,
-        pull_max_time: float = 3.6,
         lined_base_url: str = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search",
 ) -> list[dict]:
     """
@@ -33,27 +29,18 @@ def scrape_linkedin_jobs(
         job_type (int): Job type filter (F=Full-time, P=Part-time, C=Contract, T=Temporary, I=Internship, V=Volunteer)
         post_date (str): Date posted filter (e.g., "r86400" for last 24 hours, "r604800" for last 7 days, "r2592000" for last 30 days)
         pages (int): Number of batches of jobs to retrieve page*25 (25 jobs per page) LInked usually has < 75 unique jobs
-        pull_min_time (float): Minimum time to wait between requests
-        pull_max_time (float): Maximum time to wait between requests
         lined_base_url (str): Base URL for LinkedIn job search API
+        job_ids_used (set[str]): This will look for all the job ids hashes so we ignore jobs
+                                 that we have already added to the google sheet. This is
+                                 important because LinkedIn will often return the same job
+                                 multiple times in different searches and we dont want to
+                                 keep adding the same job over and over again.
 
     Returns:
         list[dict]: List of job listings with title, company, location, url, and source
     """
-    # get a current list of all the jobs on the scraped data so we don't re add
-    # things we all ready have
-    hash_list_job_ids = None
-    if creds_path and scopes and google_sheet_url:
-        hash_list_job_ids = pull_all_job_ids_from_google_sheet(
-            creds_path=creds_path,
-            scopes=scopes,
-            google_sheet_url=google_sheet_url,
-            tab_name="scraped_data",
-        )
-
-    seen_job_ids = set(hash_list_job_ids or [])
-
     jobs = []
+    scraped_at = datetime.now(timezone.utc).isoformat()
 
     for keyword, location in queries:
         for page in range(pages):
@@ -99,12 +86,12 @@ def scrape_linkedin_jobs(
                 if not job_id:
                     LOG.debug(f"Could not parse job ID from URL: {link_el['href']}. Skipping.")
                     continue
-                if job_id in seen_job_ids:
+                if job_id in job_ids_used:
                     LOG.info(
                         f"Job already exists in Google Sheet. Skipping Job: {title_el.get_text(strip=True)} at {company_el.get_text(strip=True)}"
                     )
                     continue
-                seen_job_ids.add(job_id)
+                job_ids_used.add(job_id)
                 # ignore jobs that that dont matter
                 compare_jobs_to_ignore = {word.lower().replace(" ", "") for word in job_lookup_data(data_type=5)}
                 job_title_check = title_el.get_text(strip=True).lower().replace(" ", "")
@@ -118,16 +105,18 @@ def scrape_linkedin_jobs(
                         f"Job title does not match keyword filter. Skipping Job: {title_el.get_text(strip=True)} at {company_el.get_text(strip=True)}"
                     )
                     continue
-                job_card = {
-                    "job_id": job_id,
-                    "title": title_el.get_text(strip=True),
-                    "company": company_el.get_text(strip=True),
-                    "location": location_el.get_text(strip=True) if location_el else "",
-                    "url": link_el["href"].split("?")[0],
-                    "snippet": snippet,
-                    "source": "LinkedIn",
-                    "processed": "No"
-                }
+
+                job_card = SheetJobRecord(
+                    source="LinkedIn",
+                    title=title_el.get_text(strip=True),
+                    company=company_el.get_text(strip=True),
+                    location=location_el.get_text(strip=True) if location_el else "",
+                    job_url=link_el["href"].split("?")[0],
+                    job_id=job_id,
+                    date_scraped=datetime.now().strftime("%m/%d/%Y"),
+                    snippet=snippet,
+                    scraped_at_utc=scraped_at,
+                )
 
                 jobs.append(job_card)
                 LOG.info(

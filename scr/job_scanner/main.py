@@ -1,7 +1,9 @@
 from job_scanner.utils.web_scrapper_linkedin import scrape_linkedin_jobs
+from job_scanner.utils.web_scrapper_gamejobs import scrape_gamejobs
 from job_scanner.utils.google_sheet_util import log_google_sheet_data, pull_google_sheet_data
 from job_scanner.utils.rate_job_posting import rate_job_posts
 from job_scanner.utils.logger_setup import start_logger
+from job_scanner.utils.google_sheet_util import pull_all_job_ids_from_google_sheet
 import datetime
 
 
@@ -25,6 +27,25 @@ Things I want to improve on this tool:
 # TODO: I want to build a system that auto build a resume based on the job description and my experience to keep
 # my resume to 1000 words and only have relevant experience for the job I am applying for.
 
+
+def _get_job_id_hash_list(
+    creds_path: str,
+    scopes: list[str],
+    google_sheet_url: str,
+) -> set[str]:
+    hash_list_job_ids = None
+    if creds_path and scopes and google_sheet_url:
+        hash_list_job_ids = pull_all_job_ids_from_google_sheet(
+            creds_path=creds_path,
+            scopes=scopes,
+            google_sheet_url=google_sheet_url,
+            tab_name="scraped_data",
+        )
+
+    seen_job_ids = set(hash_list_job_ids or [])
+
+    return seen_job_ids
+
 def job_scanner(
         queries: list[tuple[str,str]],
         service_account_file: str,
@@ -44,6 +65,12 @@ def job_scanner(
     
     """
     timer_start = datetime.datetime.now()
+    upload_to_google_sheets = []
+    seen_job_ids = _get_job_id_hash_list(
+        creds_path=service_account_file,
+        scopes=scopes,
+        google_sheet_url=google_sheet_url
+    )
 
     linkedin_jobs = scrape_linkedin_jobs(
         queries=queries,
@@ -51,15 +78,29 @@ def job_scanner(
         job_type="F,C",
         post_date="r604800",
         pages=2,
-        creds_path=service_account_file,
-        scopes=scopes,
-        google_sheet_url=google_sheet_url,
-        tab_name="scraped_data",
+        job_ids_used=seen_job_ids,
     )
+    upload_to_google_sheets += linkedin_jobs
     if not linkedin_jobs:
         LOG.info("No new LinkedIn jobs found from linkedin scrape.")
-        return
 
+    date_scraped_url = {
+        "anytime": "https://gamejobs.co/search",
+        "past_24_hours": "https://gamejobs.co/search?a=1d",
+        "past_7_days": "https://gamejobs.co/search?a=7d",
+        "past_31_days": "https://gamejobs.co/search?a=31d",
+    }
+    gamejobs_jobs = scrape_gamejobs(
+        base_url=date_scraped_url['past_7_days'], # change this to scrape different time ranges
+        limit=200,
+        headless=False,  # set True for headless runs
+        job_ids_used=seen_job_ids,
+    )
+    upload_to_google_sheets += gamejobs_jobs
+    if not gamejobs_jobs:
+        LOG.info("No new gamejobs.com jobs found from gamejobs.com scrape.")
+    from pprint import pprint
+    pprint(upload_to_google_sheets)
     # log the latest job data to google sheets
     jog_data = [
         [
@@ -67,13 +108,14 @@ def job_scanner(
             job["title"],
             job["company"],
             job["location"],
-            job["url"],
+            job["job_url"],
             job["source"],
-            datetime.datetime.now().strftime("%m/%d/%Y"),
-            job["processed"],
+            job["date_scraped"],
+            "No",
         ]
-        for job in linkedin_jobs
+        for job in upload_to_google_sheets
     ]
+
     log_google_sheet_data(
         creds_path=service_account_file,
         scopes=scopes,
@@ -81,6 +123,7 @@ def job_scanner(
         data=jog_data,
         tab_name="scraped_data",
     )
+
     # Calculate elapsed time
     timer_end = datetime.datetime.now()
     elapsed = timer_end - timer_start
@@ -90,7 +133,7 @@ def job_scanner(
     seconds = total_seconds % 60
 
     LOG.info(
-        f"Logged {len(linkedin_jobs)} total job entries into google sheet from Linkedin."
+        f"Logged {len(jog_data)} total job entries into google sheet."
     )
     LOG.info(f"Elapsed time Tool Ran: {hours}h {minutes}m {seconds}s")
 
