@@ -4,6 +4,7 @@ from job_scanner.utils.google_sheet_util import log_google_sheet_data, pull_goog
 from job_scanner.utils.rate_job_posting import rate_job_posts
 from job_scanner.utils.logger_setup import start_logger
 from job_scanner.utils.google_sheet_util import pull_all_job_ids_from_google_sheet
+from dataclasses import asdict, is_dataclass
 import datetime
 
 
@@ -103,19 +104,23 @@ def job_scanner(
     from pprint import pprint
     pprint(upload_to_google_sheets)
     # log the latest job data to google sheets
-    jog_data = [
-        [
-            job["job_id"],
-            job["title"],
-            job["company"],
-            job["location"],
-            job["job_url"],
-            job["source"],
-            job["date_scraped"],
+    # Normalize dataclass objects to dicts so indexing works consistently
+    jog_data = []
+    for job in upload_to_google_sheets:
+        if is_dataclass(job):
+            j = asdict(job)
+        else:
+            j = job
+        jog_data.append([
+            j.get("job_id"),
+            j.get("title"),
+            j.get("company"),
+            j.get("location"),
+            j.get("job_url"),
+            j.get("source"),
+            j.get("date_scraped"),
             "No",
-        ]
-        for job in upload_to_google_sheets
-    ]
+        ])
 
     log_google_sheet_data(
         creds_path=service_account_file,
@@ -206,3 +211,4 @@ def job_ratter(
         f"Logged {len(jog_data)} jobs from the LLM processing onto the processed_jobs tab in job_scraper sheet."
     )
     LOG.info(f"Elapsed time Tool Ran: {hours}h {minutes}m {seconds}s")
+

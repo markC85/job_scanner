@@ -116,6 +116,7 @@ def scrape_linkedin_jobs(
                     date_scraped=datetime.now().strftime("%m/%d/%Y"),
                     snippet=snippet,
                     scraped_at_utc=scraped_at,
+                    posted=None
                 )
 
                 jobs.append(job_card)
