@@ -15,5 +15,5 @@ class SheetJobRecord:
     job_url: str
     apply_url: Optional[str] = None
     description: Optional[str] = None
-    snipit: Optional[str] = None
+    snippet: Optional[str] = None
     processed: Optional[str] = None
