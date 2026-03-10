@@ -1,0 +1,1 @@
+This tool will scrape websites for job ads, then use an LLM to spec them against my CV to see which ones have a high chance to check if I have the skills I need to apply for the job, or if I need to modify the CV.
