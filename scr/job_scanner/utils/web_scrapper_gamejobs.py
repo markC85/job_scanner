@@ -9,7 +9,6 @@ from job_scanner.utils.webpage_scrapping_utils import job_id_from_url
 from job_scanner.utils.logger_setup import start_logger
 from job_scanner.models.sheet_job_record import SheetJobRecord
 
-
 LOG = start_logger()
 
 def _clean_text(s: str) -> str:
@@ -188,15 +187,7 @@ def scrape_gamejobs(
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
-        context = browser.new_context(
-            viewport={"width": 1280, "height": 900},
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            ),
-            locale="en-US",
-        )
+        context = browser.new_context(storage_state=r"D:\storage\programming\python\job_scanner\credentials\gamejobs_session.json")
         page = context.new_page()
 
         page.goto(base_url, wait_until="domcontentloaded")
@@ -254,6 +245,27 @@ def scrape_gamejobs(
 
     rows = [_job_to_sheet_row(j) for j in jobs]
 
-    LOG.info(f"Scraped {len(rows)} total jobs from GameJobs.co with keywords {job_title_keywords}.")
+    LOG.info(
+        f"Scraped {len(rows)} total jobs from GameJobs.co with keywords {job_title_keywords}."
+    )
     LOG.debug(f"Found the following jobs: \n{pprint(rows)}")
     return rows
+
+def store_session_login(save_path: str, website_url: str) -> None:
+    """
+    Utility function to store authenticated session state after manual login.
+
+    Args:
+        save_path (str): The file path where the authenticated session state will be saved as JSON.
+        website_url (str): The URL of the login page to navigate to for manual authentication.
+    """
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=False)
+        context = browser.new_context()
+
+        page = context.new_page()
+        page.goto(website_url)
+
+        input("Login manually then press enter...")
+
+        context.storage_state(path=save_path)
